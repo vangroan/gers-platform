@@ -1,0 +1,40 @@
+[package]
+name = "gers_app"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[[bin]]
+name = "gers"
+path = "src/main.rs"
+
+[profile.release]
+# Increases runtime performance because
+# LLVM has more opportunities to inline functions.
+#
+# Slows down compilation.
+codegen-units = 1
+lto = "fat"
+
+# Game engine does not trace the stack on panic.
+panic = 'abort'
+
+[dependencies]
+log = "0.4"
+slog-async = "2.5"
+slog-scope = "4.3"
+slog-stdlog = "4.1"
+slog-term = "2.6"
+
+[dependencies.gers_plugins]
+version = "*"
+path = "../gers_plugins"
+
+[dependencies.slog]
+version = "2.7"
+features = ["max_level_trace", "release_max_level_warn"]
+
+[dependencies.winit]
+version = "0.25"
+features = ["serde"]

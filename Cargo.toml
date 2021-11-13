@@ -1,0 +1,6 @@
+[workspace]
+
+members = [
+    "gers_app",
+    "gers_plugins",
+]

@@ -7,7 +7,10 @@ use winit::{
     window::WindowBuilder,
 };
 
+mod env;
 mod fps;
+mod wasm_api;
+mod wasm_impl;
 
 use fps::{FpsCounter, FpsThrottle, FpsThrottlePolicy};
 
@@ -22,10 +25,23 @@ fn main() {
     let _scope_guard = slog_scope::set_global_logger(logger.clone());
     let _log_guard = slog_stdlog::init_with_level(log::Level::Info).unwrap();
 
-    let _wasm_logger = root.new(slog::o!("lang" => "Wasm"));
+    let wasm_logger = root.new(slog::o!("lang" => "Wasm"));
 
+    // Wasmer Environment
+    let gers_env = env::GersEnv {
+        logger: wasm_logger.clone(),
+        timing: Default::default(),
+        memory: Default::default(),
+    };
+
+    // Plugin Infrastructure
     let mut plugins = Plugins::new();
 
+    // WebAssembly API
+    let import_object = wasm_api::generate_import_object(plugins.store(), &gers_env);
+    plugins.set_imports(import_object);
+
+    // Walk plugin directory and load
     let mut plugin_dir = std::env::current_dir().expect("getting current working directory");
     plugin_dir.extend(&["plugins", "core"]);
     info!(logger, "Loading plugins from directory: {:?}", plugin_dir);
@@ -66,6 +82,13 @@ fn main() {
                 }
 
                 fps_counter.add(delta_time);
+
+                // Store timings for access from WASm modules.
+                let mut lock = gers_env
+                    .timing
+                    .write()
+                    .expect("write access to timings lock");
+                lock.delta_time = delta_time;
             }
             E::MainEventsCleared => {
                 // Logic update here

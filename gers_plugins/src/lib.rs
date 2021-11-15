@@ -4,15 +4,14 @@ use std::{
     io::prelude::*,
     path::{Path, PathBuf},
 };
+use wasmer::{ChainableNamedResolver, ImportObject};
 use wasmer_compiler_cranelift::Cranelift;
 use wasmer_engine_universal::Universal;
 
-mod builtins;
-mod env;
+// mod builtins;
 mod errors;
 mod meta;
 
-use env::GersEnv;
 use errors::PluginError;
 use meta::PluginMeta;
 
@@ -29,8 +28,7 @@ pub struct Plugins {
     // logger: slog::Logger,
     plugins: Vec<Plugin>,
     store: wasmer::Store,
-    // TODO: Env should be decoupled from plugin infrastructure
-    env: GersEnv,
+    imports: Option<ImportObject>,
     // TODO: Import object of engine API and builtins
 }
 
@@ -52,17 +50,21 @@ impl Plugins {
 
         let store = wasmer::Store::new(&Universal::new(compiler).engine());
 
-        // TODO: Env should be decoupled from plugin registry
-        let env = GersEnv {
-            memory: wasmer::LazyInit::default(),
-        };
-
         Plugins {
             // logger,
             plugins: vec![],
             store,
-            env,
+            imports: None,
         }
+    }
+
+    pub fn store(&self) -> &wasmer::Store {
+        &self.store
+    }
+
+    /// Push a resolver to the back of the resolver chain.
+    pub fn set_imports(&mut self, imports: ImportObject) {
+        self.imports = Some(imports);
     }
 
     /// Iterate the plugins in execution order.
@@ -116,8 +118,18 @@ impl Plugins {
         let module = wasmer::Module::new(&self.store, buf.as_str())?;
 
         // TODO: Build import object according to dependencies in meta file
-        let import_object = builtins::create_builtins(&self.store, &self.env);
-        let instance = wasmer::Instance::new(&module, &import_object)?;
+        let dependencies = wasmer::imports! {};
+
+        // Host can provide built-in imports.
+        let builtins = match self.imports {
+            Some(ref builtins) => builtins.clone(),
+            None => wasmer::imports! {},
+        };
+
+        // Module dependencies are resolved first.
+        let chain = dependencies.chain_back(builtins);
+
+        let instance = wasmer::Instance::new(&module, &chain)?;
 
         Ok(instance)
     }

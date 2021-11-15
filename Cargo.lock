@@ -37,6 +37,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ee10e43ae4a853c0a3591d4e2ada1719e553be18199d9da9d4a83f5927c2f5c7"
+
+[[package]]
 name = "arc-swap"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -619,6 +625,7 @@ checksum = "00b0228411908ca8685dba7fc2cdd70ec9990a6e753e89b6ac91a84c40fbaf4b"
 name = "gers_app"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "gers_plugins",
  "log",
  "slog",
@@ -626,6 +633,7 @@ dependencies = [
  "slog-scope",
  "slog-stdlog",
  "slog-term",
+ "wasmer",
  "winit",
 ]
 

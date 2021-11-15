@@ -21,11 +21,13 @@ lto = "fat"
 panic = 'abort'
 
 [dependencies]
+anyhow = "1.0"
 log = "0.4"
 slog-async = "2.5"
 slog-scope = "4.3"
 slog-stdlog = "4.1"
 slog-term = "2.6"
+wasmer = "2.0"
 
 [dependencies.gers_plugins]
 version = "*"

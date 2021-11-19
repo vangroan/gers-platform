@@ -1,1 +1,5 @@
 target/
+
+# WebAssembly binaries can be built using cargo make
+plugins/**/main.wasm
+plugins/**/main.wat

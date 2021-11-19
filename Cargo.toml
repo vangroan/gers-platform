@@ -2,5 +2,27 @@
 
 members = [
     "gers_app",
+    "gers_core",
     "gers_plugins",
 ]
+
+# Exclude crates that target WASM otherwise they would be built
+# targeting a DLL.
+#
+# The WASM module imports are not available when linking as a native
+# dynamic library, so linker would fail.
+default-members = [
+    "gers_app",
+    "gers_plugins",
+]
+
+[profile.release]
+# Controls LLVM's link time optimizations.
+# Can produce better optimized code, using whole-program analysis,
+# at the cost of longer linking time.
+lto = true
+# Less parallel generation units means slower
+# compilation for potentially faster code.
+codegen-units = 1
+# Include debug symbols.
+debug = true

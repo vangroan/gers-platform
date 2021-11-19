@@ -1,0 +1,40 @@
+# Makefiles
+
+[tasks.build-wasm]
+command = "cargo"
+args = ["build", "--all-features", "--release"]
+
+[tasks.wasm2wat]
+description = "Disassemble WASM into WAT"
+command = "wasm2wat"
+args = [
+    "--output=../plugins/core/main.wat",
+    "../target/wasm32-unknown-unknown/release/gers_core.wasm",
+]
+
+[tasks.copy-binary]
+description = "Copies the built binary to the plugin release folder"
+script_runner = "@shell"
+script = '''
+cp ../target/wasm32-unknown-unknown/release/gers_core.wasm ../plugins/core/main.wasm
+'''
+
+# Default build task is overridden so the
+# generated WASM binary can be converted to WAT
+# afterwards.
+#
+# Because `build` is called as a default task,
+# this plugin module will be built along with
+# everything else via `cargo make`.
+[tasks.build]
+clear = true # override
+description = "Runs the rust compiler and builds the plugin package"
+dependencies = [
+    "build-wasm",
+    "wasm2wat",
+    "copy-binary",
+]
+
+# FIXME: Default test command tries to execute the .wasm file as an .exe
+[tasks.test]
+disabled = true

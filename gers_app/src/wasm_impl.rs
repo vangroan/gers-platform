@@ -5,7 +5,7 @@ pub fn log_info(env: &GersEnv, str_ptr: WasmPtr<u8, Array>, str_len: u32) {
     let maybe = env
         .memory
         .get_ref()
-        // SAFETY: Underly  ing memory may not be mutated or grown while string is borrowed.
+        // SAFETY: Underlying memory may not be mutated or grown while string is borrowed.
         .and_then(|mem| unsafe { str_ptr.get_utf8_str(mem, str_len) });
 
     if let Some(string) = maybe {

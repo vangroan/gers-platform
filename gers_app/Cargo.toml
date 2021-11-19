@@ -9,17 +9,6 @@ edition = "2021"
 name = "gers"
 path = "src/main.rs"
 
-[profile.release]
-# Increases runtime performance because
-# LLVM has more opportunities to inline functions.
-#
-# Slows down compilation.
-codegen-units = 1
-lto = "fat"
-
-# Game engine does not trace the stack on panic.
-panic = 'abort'
-
 [dependencies]
 anyhow = "1.0"
 log = "0.4"

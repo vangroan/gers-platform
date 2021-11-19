@@ -8,6 +8,7 @@ use winit::{
 };
 
 mod env;
+mod error;
 mod fps;
 mod wasm_api;
 mod wasm_impl;
@@ -25,11 +26,9 @@ fn main() {
     let _scope_guard = slog_scope::set_global_logger(logger.clone());
     let _log_guard = slog_stdlog::init_with_level(log::Level::Info).unwrap();
 
-    let wasm_logger = root.new(slog::o!("lang" => "Wasm"));
-
     // Wasmer Environment
     let gers_env = env::GersEnv {
-        logger: wasm_logger.clone(),
+        logger: root.new(slog::o!("lang" => "Wasm")),
         timing: Default::default(),
         memory: Default::default(),
     };
@@ -55,7 +54,6 @@ fn main() {
     let mut fps_throttle = FpsThrottle::new(144, FpsThrottlePolicy::Yield);
     let mut fps_counter = FpsCounter::new();
     let mut last_time = Instant::now();
-    let mut delta_time = Duration::from_millis(16);
 
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
@@ -72,7 +70,7 @@ fn main() {
             E::NewEvents(_) => {
                 // Boundary where frame starts.
                 let now = Instant::now();
-                delta_time = now - last_time;
+                let mut delta_time = now - last_time;
                 last_time = now;
 
                 // Because delta time is frequently used as
@@ -102,7 +100,7 @@ fn main() {
                 for plugin in plugins.iter_plugins() {
                     if let Some(update_fn) = plugin.update_fn() {
                         if let Err(err) = update_fn.call(&[]) {
-                            error!(logger, "update error: {}", err);
+                            error::print_runtime_error(&logger, &err);
                         }
                     }
                 }

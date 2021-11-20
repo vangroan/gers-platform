@@ -3,6 +3,7 @@
 members = [
     "gers_app",
     "gers_core",
+    "gers_events",
     "gers_plugins",
 ]
 

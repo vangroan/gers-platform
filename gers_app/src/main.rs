@@ -15,16 +15,21 @@ mod wasm_impl;
 
 use fps::{FpsCounter, FpsThrottle, FpsThrottlePolicy};
 
+use crate::error::print_runtime_error;
+
 fn main() {
     // Logger
     let decorator = slog_term::TermDecorator::new().build();
     let drain = slog_term::FullFormat::new(decorator).build().fuse();
-    let drain = slog_async::Async::new(drain).chan_size(4096).build().fuse();
+    let drain = slog_async::Async::new(drain)
+        .chan_size(1024 * 8)
+        .build()
+        .fuse();
     let root = slog::Logger::root(drain, slog::o!());
     let logger = root.new(slog::o!("lang" => "Rust"));
 
     let _scope_guard = slog_scope::set_global_logger(logger.clone());
-    let _log_guard = slog_stdlog::init_with_level(log::Level::Info).unwrap();
+    let _log_guard = slog_stdlog::init_with_level(log::Level::Warn).unwrap();
 
     // Wasmer Environment
     let gers_env = env::GersEnv {
@@ -54,12 +59,30 @@ fn main() {
     let mut fps_throttle = FpsThrottle::new(144, FpsThrottlePolicy::Yield);
     let mut fps_counter = FpsCounter::new();
     let mut last_time = Instant::now();
+    const LOCKSTEP_INTEVAL: f64 = 0.2; // seconds
+    let mut lockstep_timer = Duration::ZERO;
+    let mut hello_counter: u32 = 0;
 
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_title("gers - 0 FPS 0.00ms")
         .build(&event_loop)
         .unwrap();
+
+    // Allocate space in the plugins for the event buffer.
+    for plugin in plugins.iter_plugins_mut() {
+        if let Some(alloc_fn) = plugin.event_alloc_fn() {
+            // Allocate 4KB
+            match alloc_fn.call(0x1000) {
+                Ok(ptr) => {
+                    plugin.data_ptr = Some(ptr);
+                }
+                Err(err) => {
+                    print_runtime_error(&logger, &err);
+                }
+            }
+        }
+    }
 
     use winit::event::{Event as E, WindowEvent as WE};
 
@@ -80,6 +103,7 @@ fn main() {
                 }
 
                 fps_counter.add(delta_time);
+                lockstep_timer = lockstep_timer + delta_time;
 
                 // Store timings for access from WASm modules.
                 let mut lock = gers_env
@@ -103,6 +127,51 @@ fn main() {
                             error::print_runtime_error(&logger, &err);
                         }
                     }
+                }
+
+                // Dispatch Events
+                if lockstep_timer.as_secs_f64() >= LOCKSTEP_INTEVAL {
+                    let event_data = gers_events::HelloEvent {
+                        data: hello_counter,
+                        padding: 0,
+                        div: (hello_counter / 8) as u16,
+                    };
+
+                    for plugin in plugins.iter_plugins() {
+                        if let (Some(data_ptr), Some(update_fn)) =
+                            (plugin.data_ptr, plugin.event_update_fn())
+                        {
+                            // Marshal the event data into the
+                            // plugin's linear memory.
+                            if let Ok(memory) = plugin.memory() {
+                                if let Some(cell_slice) = unsafe {
+                                    data_ptr.deref_mut(
+                                        memory,
+                                        0,
+                                        std::mem::size_of::<gers_events::HelloEvent>() as u32,
+                                    )
+                                } {
+                                    let data_slice: &mut [u8] =
+                                        unsafe { std::mem::transmute(cell_slice) };
+                                    let (_, struct_slice, _) = unsafe {
+                                        data_slice.align_to_mut::<gers_events::HelloEvent>()
+                                    };
+
+                                    if !struct_slice.is_empty() {
+                                        // Copy into memory.
+                                        struct_slice[0] = event_data.clone();
+
+                                        // NOTE: HelloEvent type = 1
+                                        if let Err(err) = update_fn.call(1, data_ptr) {
+                                            error::print_runtime_error(&logger, &err);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    hello_counter += 1;
                 }
             }
             E::RedrawRequested(window_id) if window_id == window.id() => {

@@ -626,6 +626,7 @@ name = "gers_app"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "gers_events",
  "gers_plugins",
  "log",
  "slog",
@@ -639,6 +640,13 @@ dependencies = [
 
 [[package]]
 name = "gers_core"
+version = "0.1.0"
+dependencies = [
+ "gers_events",
+]
+
+[[package]]
+name = "gers_events"
 version = "0.1.0"
 
 [[package]]

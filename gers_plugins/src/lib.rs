@@ -4,7 +4,7 @@ use std::{
     io::prelude::*,
     path::{Path, PathBuf},
 };
-use wasmer::{ChainableNamedResolver, ImportObject};
+use wasmer::{Array, ChainableNamedResolver, ImportObject, NativeFunc, WasmPtr};
 use wasmer_compiler_cranelift::Cranelift;
 use wasmer_engine_universal::Universal;
 
@@ -21,6 +21,34 @@ const PLUGIN_FILENAME: &str = "plugin.toml";
 /// Name of WebAssembly module file to load.
 const PLUGIN_WASM_MODULE: &str = "main.wasm";
 
+/// Helper to get function hooks out of module
+/// when setting up a plugin.
+macro_rules! get_func {
+    ($exports:expr, $name:literal, $args:ty, $ret:ty) => {
+        match $exports.get_function($name) {
+            Ok(func) => match func.native::<$args, $ret>() {
+                Ok(native_func) => Some(native_func.clone()),
+                Err(err) => {
+                    eprintln!("native function error: {}", err);
+                    return Err(PluginError::FunctionType);
+                }
+            },
+            Err(wasmer::ExportError::Missing(..)) => None,
+            Err(wasmer::ExportError::IncompatibleType) => return Err(PluginError::FunctionType),
+        }
+    };
+    ($exports:expr, $name:literal) => {
+        match $exports.get_function($name) {
+            Ok(func) => Some(func.clone()),
+            Err(wasmer::ExportError::Missing(..)) => None,
+            Err(wasmer::ExportError::IncompatibleType) => return Err(PluginError::FunctionType),
+        }
+    };
+}
+
+pub type EventAllocFn = NativeFunc<u32, WasmPtr<u8, Array>>;
+pub type EventUpdateFn = NativeFunc<(i32, WasmPtr<u8, Array>), i32>;
+
 /// Registry of instantiated plugin modules.
 pub struct Plugins {
     /// Keeps a around to be cloned into
@@ -34,8 +62,11 @@ pub struct Plugins {
 
 pub struct Plugin {
     instance: wasmer::Instance,
+    pub data_ptr: Option<WasmPtr<u8, Array>>,
     meta: PluginMeta,
     update_fn: Option<wasmer::Function>,
+    event_alloc_fn: Option<EventAllocFn>,
+    event_update_fn: Option<EventUpdateFn>,
 }
 
 impl Default for Plugins {
@@ -72,6 +103,11 @@ impl Plugins {
         self.plugins.iter()
     }
 
+    #[inline(always)]
+    pub fn iter_plugins_mut(&mut self) -> impl Iterator<Item = &mut Plugin> {
+        self.plugins.iter_mut()
+    }
+
     /// Load a plugin contained in a directory.
     pub fn load_plugin_dir(&mut self, dir_path: impl AsRef<Path>) -> Result<(), PluginError> {
         let mut meta_path = PathBuf::new();
@@ -93,16 +129,28 @@ impl Plugins {
 
         // TODO: Decouple calls from plugin module into event framework
         // Frame Update entry point
-        let update_fn = match instance.exports.get_function("__gers_update") {
-            Ok(func) => Some(func.clone()),
-            Err(wasmer::ExportError::Missing(..)) => None,
-            Err(wasmer::ExportError::IncompatibleType) => return Err(PluginError::FunctionType),
-        };
+        // let update_fn = match instance.exports.get_function("__gers_update") {
+        //     Ok(func) => Some(func.clone()),
+        //     Err(wasmer::ExportError::Missing(..)) => None,
+        //     Err(wasmer::ExportError::IncompatibleType) => return Err(PluginError::FunctionType),
+        // };
+        let update_fn = get_func!(instance.exports, "__gers_update");
+        let event_alloc_fn =
+            get_func!(instance.exports, "__gers_event_alloc", u32, WasmPtr<u8, Array>);
+        let event_update_fn = get_func!(
+            instance.exports,
+            "__gers_event_update",
+            (i32, WasmPtr<u8, Array>),
+            i32
+        );
 
         self.plugins.push(Plugin {
             instance,
+            data_ptr: None,
             meta: plugin_meta,
             update_fn,
+            event_alloc_fn,
+            event_update_fn,
         });
 
         Ok(())
@@ -139,12 +187,24 @@ impl Plugin {
         &self.instance
     }
 
+    pub fn memory(&self) -> Result<&wasmer::Memory, wasmer::ExportError> {
+        self.instance.exports.get_memory("memory")
+    }
+
     pub fn meta(&self) -> &PluginMeta {
         &self.meta
     }
 
     pub fn update_fn(&self) -> Option<&wasmer::Function> {
         self.update_fn.as_ref()
+    }
+
+    pub fn event_alloc_fn(&self) -> Option<&EventAllocFn> {
+        self.event_alloc_fn.as_ref()
+    }
+
+    pub fn event_update_fn(&self) -> Option<&EventUpdateFn> {
+        self.event_update_fn.as_ref()
     }
 }
 

@@ -8,6 +8,9 @@ pub fn generate_import_object(store: &Store, env: &GersEnv) -> ImportObject {
         "gers" => {
             "log_info"       => Function::new_native_with_env(store, env.clone(), wasm_impl::log_info),
             "get_delta_time" => Function::new_native_with_env(store, env.clone(), wasm_impl::get_delta_time),
+        },
+        "gers_event" => {
+            
         }
     }
 }

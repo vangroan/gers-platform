@@ -25,6 +25,7 @@ cargo make
 
 - `wasm-bindgen` is for Rust WebAssembly in Javascript (V8). How shims and bindings for Rust WebAssembly in Rust (`wasmer`, `wasm-time`) would work are unclear.
   - https://github.com/wasmerio/wasmer/issues/315
+  - https://github.com/wasmerio/wasmer/issues/553
 - `panic!()` or `format!()` not optimised away adds enourmous bloat to the generated WebAssembly. At the moment there is little that can be done about it.
   - https://github.com/rustwasm/team/issues/19
   - https://github.com/rust-embedded/wg/issues/41

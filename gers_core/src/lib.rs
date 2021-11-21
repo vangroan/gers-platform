@@ -1,3 +1,4 @@
+use gers_api::bump::BumpAllocator;
 use gers_events::*;
 
 #[allow(non_camel_case_types)]
@@ -65,6 +66,12 @@ static mut EVENT_DATA: Vec<u8> = Vec::new();
 /// lead to move-after-free type bugs.
 #[no_mangle]
 pub unsafe extern "C" fn __gers_event_alloc(size: u32) -> *mut u8 {
+    // TODO: Initialise global bump allocator.
+    #[allow(unused_must_use)]
+    if let Ok(mut bump) = BumpAllocator::new() {
+        bump.alloc_aligned(16);
+    }
+
     EVENT_DATA.resize(size as usize, 0);
 
     // SAFETY: The vector is global and will outlive this

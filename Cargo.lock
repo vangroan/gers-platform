@@ -622,6 +622,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00b0228411908ca8685dba7fc2cdd70ec9990a6e753e89b6ac91a84c40fbaf4b"
 
 [[package]]
+name = "gers_api"
+version = "0.1.0"
+
+[[package]]
 name = "gers_app"
 version = "0.1.0"
 dependencies = [
@@ -642,6 +646,7 @@ dependencies = [
 name = "gers_core"
 version = "0.1.0"
 dependencies = [
+ "gers_api",
  "gers_events",
 ]
 

@@ -64,7 +64,7 @@ unsafe fn alloc(size: usize, align: usize) -> Result<NonNull<u8>, BumpError> {
     if ptr.is_null() {
         // `alloc` interface returns null on invalid
         // layout as well, but we covered the validations.
-        return Err(BumpError::OOM);
+        return Err(BumpError::OutOfMemory);
     } else {
         Ok(NonNull::new_unchecked(ptr))
     }
@@ -91,7 +91,7 @@ impl RawBlock {
 impl Drop for RawBlock {
     fn drop(&mut self) {
         unsafe {
-            // Layour invariants were validated on instantiation.
+            // Layout invariants were validated on instantiation.
             let layout = Layout::from_size_align_unchecked(self.size, self.size);
             std::alloc::dealloc(self.ptr.as_ptr(), layout);
         }
@@ -103,9 +103,9 @@ pub enum BumpError {
     /// Request for allocation has invalid arguments.
     BadRequest,
     /// System has run out of memory.
-    OOM,
+    OutOfMemory,
     /// Bump allocator has reached the end of it space limit.
-    OOS,
+    NoSpace,
 }
 
 const BLOCK_SIZE_BITS: usize = 12; // 4KB
@@ -153,7 +153,7 @@ impl BumpAllocator {
         let next = (aligned + size) - self.block.ptr.as_ptr() as usize;
 
         if next > self.block.size {
-            return Err(BumpError::OOS);
+            return Err(BumpError::NoSpace);
         }
 
         // Commit

@@ -78,11 +78,16 @@ struct RawBlock {
 
 impl RawBlock {
     /// Allocate a new block of raw memory.
-    unsafe fn new(size: usize) -> Result<RawBlock, BumpError> {
+    fn new(size: usize) -> Result<RawBlock, BumpError> {
         // When the block is aligned to its size, it's trivial to
         // use bitwise operations to find the block start and end
         // boundary for a given pointer within in.
-        let ptr = alloc(size, size)?;
+        //
+        // SAFETY: Raw allocation is owned by us
+        //         and will be safely dropped.
+        //         Handing out pointers to inside
+        //         of the block is what will be unsafe.
+        let ptr = unsafe { alloc(size, size)? };
 
         Ok(RawBlock { ptr, size })
     }
@@ -124,16 +129,11 @@ impl BumpAllocator {
 
     /// Create a new bump allocator with `BLOCK_SIZE`.
     pub fn new() -> Result<Self, BumpError> {
-        // SAFETY: Raw allocation is owned by us
-        //         and will be safely dropped.
-        //         Handing out pointers to inside
-        //         of the block is what will be unsafe.
-        let block = unsafe { RawBlock::new(BLOCK_SIZE)? };
-
+        let block = RawBlock::new(BLOCK_SIZE)?;
         Ok(Self { cursor: 0, block })
     }
 
-    /// Allocate with default alignemnt of double machine word.
+    /// Allocate with default alignment of double machine word.
     ///
     /// # Safety
     ///
@@ -143,6 +143,12 @@ impl BumpAllocator {
         self.alloc(size, line_size)
     }
 
+    /// Allocate a new object in the allocator's space and bump the cursor.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BumpError::NoSpace`] if the allocator has run out of space.
+    ///
     /// # Safety
     ///
     /// The memory pointed to by the resulting pointer is uninitialized.
@@ -169,7 +175,11 @@ impl BumpAllocator {
     ///
     /// #Safety
     ///
-    /// Any
+    /// Any existing pointers to spce in the allocator will now be invalid,
+    /// pointing to memory that will potentially overwritten.
+    ///
+    /// The caller must ensure that all retained pointers must be dropped
+    /// before resetting the allocator.
     pub unsafe fn reset(&mut self) {
         self.cursor = 0;
     }
@@ -189,7 +199,12 @@ impl RawPtr {
     ///
     /// The pointer should not outlive the [`BumpAllocator`].
     #[inline(always)]
-    pub unsafe fn as_ptr(&self) -> *mut u8 {
+    pub unsafe fn as_ptr(&self) -> *const u8 {
+        self.ptr.as_ptr()
+    }
+
+    #[inline(always)]
+    pub unsafe fn as_ptr_mut(&self) -> *mut u8 {
         self.ptr.as_ptr()
     }
 }
@@ -202,10 +217,8 @@ mod test {
     fn test_raw_allocation() {
         let size = 0x1000;
 
-        unsafe {
-            let block = RawBlock::new(size).unwrap();
-            assert_eq!(block.size, size);
-        }
+        let block = RawBlock::new(size).unwrap();
+        assert_eq!(block.size, size);
     }
 
     #[test]

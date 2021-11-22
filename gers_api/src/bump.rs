@@ -13,7 +13,7 @@ use std::{alloc::Layout, ptr::NonNull};
 /// Requires that `align` is power-of-two.
 ///
 /// Implementation taken from: https://os.phil-opp.com/allocator-designs/#address-alignment
-#[inline]
+#[inline(always)]
 fn align_up(addr: usize, align: usize) -> usize {
     debug_assert!(align.is_power_of_two(), "alignment must be power-of-two");
 
@@ -30,6 +30,24 @@ fn align_up(addr: usize, align: usize) -> usize {
     //   the address. Already aligned addresses stay the same,
     //   while unaligned addresses are aligned upwards.
     (addr + align - 1) & !(align - 1)
+}
+
+/// Select an alignment for the given value.
+///
+/// Following the practice of popular allocators, values
+/// are aligned to a machine word when the size is a machine
+/// word or smaller.
+///
+/// For SIMD and values larger than a machine word, we align
+/// to twice the machine word.
+#[inline(always)]
+fn align_word(size: usize) -> usize {
+    let word = std::mem::size_of::<usize>();
+    if size > word {
+        word * 2
+    } else {
+        word
+    }
 }
 
 /// Allocate a new block of raw memory.
@@ -133,14 +151,14 @@ impl BumpAllocator {
         Ok(Self { cursor: 0, block })
     }
 
-    /// Allocate with default alignment of double machine word.
+    /// Allocate with default alignment of a machine word or a double machine word.
     ///
     /// # Safety
     ///
     /// Has the same requirements as [`BumpAllocator::alloc()`]
     pub unsafe fn alloc_aligned(&mut self, size: usize) -> Result<RawPtr, BumpError> {
-        let line_size = std::mem::size_of::<usize>() * 2;
-        self.alloc(size, line_size)
+        let align = align_word(size);
+        self.alloc(size, align)
     }
 
     /// Allocate a new object in the allocator's space and bump the cursor.
@@ -234,5 +252,17 @@ mod test {
             assert_eq!(bump.cursor, 32);
             assert_eq!(ptr.as_ptr().offset_from(bump.block.ptr.as_ptr()), 16);
         }
+    }
+
+    #[test]
+    fn test_align_word() {
+        let word = std::mem::size_of::<usize>();
+        let word_double = std::mem::size_of::<usize>() * 2;
+        assert_eq!(align_word(2), word);
+        assert_eq!(align_word(4), word);
+        assert_eq!(align_word(8), word);
+        assert_eq!(align_word(12), word_double);
+        assert_eq!(align_word(16), word_double);
+        assert_eq!(align_word(32), word_double);
     }
 }

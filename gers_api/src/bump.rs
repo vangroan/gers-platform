@@ -109,6 +109,19 @@ impl RawBlock {
 
         Ok(RawBlock { ptr, size })
     }
+
+    /// Create a raw block that is internally dangling.
+    /// This is for containers that are lazily allocated.
+    ///
+    /// # Safety
+    ///
+    /// The pointer to the memory block is invalid.
+    const unsafe fn dangling() -> RawBlock {
+        RawBlock {
+            ptr: NonNull::dangling(),
+            size: 0,
+        }
+    }
 }
 
 impl Drop for RawBlock {
@@ -129,6 +142,8 @@ pub enum BumpError {
     OutOfMemory,
     /// Bump allocator has reached the end of it space limit.
     NoSpace,
+    /// The allocator was used before initialization.
+    Uninitialized,
 }
 
 const BLOCK_SIZE_BITS: usize = 12; // 4KB
@@ -139,16 +154,48 @@ pub struct BumpAllocator {
     /// Not guaranteed to be aligned.
     cursor: usize,
     block: RawBlock,
+    initialzed: bool,
 }
 
 impl BumpAllocator {
     /// Maximum number of bytes limit that can be allocated.
     pub const MAX_SIZE: usize = BLOCK_SIZE;
 
-    /// Create a new bump allocator with `BLOCK_SIZE`.
     pub fn new() -> Result<Self, BumpError> {
         let block = RawBlock::new(BLOCK_SIZE)?;
-        Ok(Self { cursor: 0, block })
+        Ok(Self {
+            cursor: 0,
+            block,
+            initialzed: true,
+        })
+    }
+
+    /// Create a new allocator that is internally not initialized.
+    ///
+    /// # Safety
+    ///
+    /// The internal pointers are dangling and must not be used.
+    /// If [`BumpAllocator::alloc`] or [`BumpAllocator::reset`] is called
+    /// on an uninitialized allocator, they will result in errors.
+    pub const unsafe fn uninit() -> Self {
+        Self {
+            cursor: 0,
+            block: RawBlock::dangling(),
+            initialzed: false,
+        }
+    }
+
+    /// Create a new bump allocator with `BLOCK_SIZE`.
+    pub fn initialize(&mut self) -> Result<(), BumpError> {
+        let block = RawBlock::new(BLOCK_SIZE)?;
+
+        *self = Self {
+            cursor: 0,
+            block,
+            initialzed: true,
+        };
+
+        Ok(())
     }
 
     /// Allocate with default alignment of a machine word or a double machine word.
@@ -167,10 +214,16 @@ impl BumpAllocator {
     ///
     /// Returns [`BumpError::NoSpace`] if the allocator has run out of space.
     ///
+    /// Using an uninitialized allocator results in an error.
+    ///
     /// # Safety
     ///
     /// The memory pointed to by the resulting pointer is uninitialized.
     pub unsafe fn alloc(&mut self, size: usize, align: usize) -> Result<RawPtr, BumpError> {
+        if !self.initialzed {
+            return Err(BumpError::Uninitialized);
+        }
+
         let aligned = align_up(self.block.ptr.as_ptr() as usize + self.cursor, align);
 
         // Cursor is offset from start of block and not memory address.
@@ -191,15 +244,25 @@ impl BumpAllocator {
     /// Clears the allocator's space, making [`BumpAllocator::MAX_SIZE`]
     /// available again.
     ///
-    /// #Safety
+    /// # Errors
+    ///
+    /// Using an uninitialized allocator results in an error.
+    ///
+    /// # Safety
     ///
     /// Any existing pointers to spce in the allocator will now be invalid,
     /// pointing to memory that will potentially overwritten.
     ///
     /// The caller must ensure that all retained pointers must be dropped
     /// before resetting the allocator.
-    pub unsafe fn reset(&mut self) {
+    pub unsafe fn reset(&mut self) -> Result<(), BumpError> {
+        if !self.initialzed {
+            return Err(BumpError::Uninitialized);
+        }
+
         self.cursor = 0;
+
+        Ok(())
     }
 }
 

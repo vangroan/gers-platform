@@ -143,16 +143,9 @@ impl Plugins {
         let update_fn = get_func!(instance.exports, "__gers_update");
         let event_init_fn = get_func!(instance.exports, "__gers_bump_init", (), i32);
         let event_reset_fn = get_func!(instance.exports, "__gers_bump_reset", (), i32);
-        let event_alloc2_fn =
-            get_func!(instance.exports, "__gers_bump_alloc", u32, WasmPtr<u8, Array>);
-        let event_alloc_fn =
-            get_func!(instance.exports, "__gers_event_alloc", u32, WasmPtr<u8, Array>);
-        let event_update_fn = get_func!(
-            instance.exports,
-            "__gers_event_update",
-            (i32, WasmPtr<u8, Array>),
-            i32
-        );
+        let event_alloc2_fn = get_func!(instance.exports, "__gers_bump_alloc", u32, WasmPtr<u8, Array>);
+        let event_alloc_fn = get_func!(instance.exports, "__gers_event_alloc", u32, WasmPtr<u8, Array>);
+        let event_update_fn = get_func!(instance.exports, "__gers_event_update", (i32, WasmPtr<u8, Array>), i32);
 
         self.plugins.push(Plugin {
             instance,

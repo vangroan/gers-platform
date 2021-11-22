@@ -24,10 +24,7 @@ fn main() {
     // Logger
     let decorator = slog_term::TermDecorator::new().build();
     let drain = slog_term::FullFormat::new(decorator).build().fuse();
-    let drain = slog_async::Async::new(drain)
-        .chan_size(1024 * 8)
-        .build()
-        .fuse();
+    let drain = slog_async::Async::new(drain).chan_size(1024 * 8).build().fuse();
     let root = slog::Logger::root(drain, slog::o!());
     let logger = root.new(slog::o!("lang" => "Rust"));
 
@@ -121,10 +118,7 @@ fn main() {
                 lockstep_timer = lockstep_timer + delta_time;
 
                 // Store timings for access from WASm modules.
-                let mut lock = gers_env
-                    .timing
-                    .write()
-                    .expect("write access to timings lock");
+                let mut lock = gers_env.timing.write().expect("write access to timings lock");
                 lock.delta_time = delta_time;
             }
             E::MainEventsCleared => {
@@ -169,8 +163,7 @@ fn main() {
 
                         if let Some(alloc_fn) = &plugin.event_alloc2_fn {
                             if let Ok(memory) = plugin.memory() {
-                                let data_size =
-                                    std::mem::size_of::<gers_events::HelloEvent>() as u32;
+                                let data_size = std::mem::size_of::<gers_events::HelloEvent>() as u32;
 
                                 match alloc_fn.call(data_size as u32) {
                                     Ok(wasm_ptr) => {
@@ -184,8 +177,7 @@ fn main() {
                                         //         references can be taken to the same memory.
                                         //         We do this in the event loop which is single
                                         //         threaded, and do not hang on to this pointer.
-                                        let maybe_slice =
-                                            unsafe { wasm_ptr.deref_mut(memory, 0, data_size) };
+                                        let maybe_slice = unsafe { wasm_ptr.deref_mut(memory, 0, data_size) };
 
                                         match maybe_slice {
                                             Some(slice) => {
@@ -193,35 +185,24 @@ fn main() {
                                                 //         from [Cell<u8>]. While not guaranteed
                                                 //         to work it's common for projects to
                                                 //         rely on this trick.
-                                                let (_, data_slice, _) = unsafe {
-                                                    slice.align_to_mut::<gers_events::HelloEvent>()
-                                                };
+                                                let (_, data_slice, _) =
+                                                    unsafe { slice.align_to_mut::<gers_events::HelloEvent>() };
 
                                                 // If the slice size mismatches the event data, the
                                                 // middle will be length 0.
                                                 if !data_slice.is_empty() {
                                                     data_slice[0] = event_data.clone();
 
-                                                    if let Some(update_fn) =
-                                                        &plugin.event_update_fn()
-                                                    {
+                                                    if let Some(update_fn) = &plugin.event_update_fn() {
                                                         // NOTE: HelloEvent type = 1
-                                                        if let Err(err) =
-                                                            update_fn.call(1, wasm_ptr)
-                                                        {
-                                                            error::print_runtime_error(
-                                                                &logger, &err,
-                                                            );
+                                                        if let Err(err) = update_fn.call(1, wasm_ptr) {
+                                                            error::print_runtime_error(&logger, &err);
                                                         }
                                                     }
                                                 }
                                             }
                                             None => {
-                                                error!(
-                                                    logger,
-                                                    "WasmPtr deref fail ptr={}",
-                                                    wasm_ptr.offset()
-                                                );
+                                                error!(logger, "WasmPtr deref fail ptr={}", wasm_ptr.offset());
                                             }
                                         }
                                     }

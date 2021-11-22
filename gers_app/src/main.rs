@@ -1,6 +1,6 @@
 //! gers executable application
 use gers_plugins::Plugins;
-use slog::{error, info, Drain};
+use slog::{error, info, warn, Drain};
 use std::time::{Duration, Instant};
 use winit::{
     event_loop::{ControlFlow, EventLoop},
@@ -9,22 +9,22 @@ use winit::{
 
 mod env;
 mod error;
+mod ext;
 mod fps;
 mod wasm_api;
 mod wasm_impl;
 
-use fps::{FpsCounter, FpsThrottle, FpsThrottlePolicy};
-
-use crate::error::print_runtime_error;
+use crate::{
+    error::print_runtime_error,
+    ext::*,
+    fps::{FpsCounter, FpsThrottle, FpsThrottlePolicy},
+};
 
 fn main() {
     // Logger
     let decorator = slog_term::TermDecorator::new().build();
     let drain = slog_term::FullFormat::new(decorator).build().fuse();
-    let drain = slog_async::Async::new(drain)
-        .chan_size(1024 * 8)
-        .build()
-        .fuse();
+    let drain = slog_async::Async::new(drain).chan_size(1024 * 8).build().fuse();
     let root = slog::Logger::root(drain, slog::o!());
     let logger = root.new(slog::o!("lang" => "Rust"));
 
@@ -56,10 +56,10 @@ fn main() {
     }
 
     // Frame Timing
-    let mut fps_throttle = FpsThrottle::new(144, FpsThrottlePolicy::Yield);
+    let mut fps_throttle = FpsThrottle::new(144, FpsThrottlePolicy::Off);
     let mut fps_counter = FpsCounter::new();
     let mut last_time = Instant::now();
-    const LOCKSTEP_INTEVAL: f64 = 0.2; // seconds
+    const LOCKSTEP_INTEVAL: Duration = Duration::from_millis(100);
     let mut lockstep_timer = Duration::ZERO;
     let mut hello_counter: u32 = 0;
 
@@ -71,17 +71,29 @@ fn main() {
 
     // Allocate space in the plugins for the event buffer.
     for plugin in plugins.iter_plugins_mut() {
-        if let Some(alloc_fn) = plugin.event_alloc_fn() {
-            // Allocate 4KB
-            match alloc_fn.call(0x1000) {
-                Ok(ptr) => {
-                    plugin.data_ptr = Some(ptr);
+        if let Some(init_fn) = &plugin.event_init_fn {
+            match init_fn.call() {
+                Ok(0) => { /* Success */ }
+                Ok(error_id) => {
+                    error!(logger, "allocation init failed: {}", error_id);
                 }
                 Err(err) => {
                     print_runtime_error(&logger, &err);
                 }
             }
         }
+
+        // if let Some(alloc_fn) = plugin.event_alloc_fn() {
+        //     // Allocate 4KB
+        //     match alloc_fn.call(0x1000) {
+        //         Ok(ptr) => {
+        //             plugin.data_ptr = Some(ptr);
+        //         }
+        //         Err(err) => {
+        //             print_runtime_error(&logger, &err);
+        //         }
+        //     }
+        // }
     }
 
     use winit::event::{Event as E, WindowEvent as WE};
@@ -106,10 +118,7 @@ fn main() {
                 lockstep_timer = lockstep_timer + delta_time;
 
                 // Store timings for access from WASm modules.
-                let mut lock = gers_env
-                    .timing
-                    .write()
-                    .expect("write access to timings lock");
+                let mut lock = gers_env.timing.write().expect("write access to timings lock");
                 lock.delta_time = delta_time;
             }
             E::MainEventsCleared => {
@@ -130,7 +139,7 @@ fn main() {
                 }
 
                 // Dispatch Events
-                if lockstep_timer.as_secs_f64() >= LOCKSTEP_INTEVAL {
+                while lockstep_timer >= LOCKSTEP_INTEVAL {
                     let event_data = gers_events::HelloEvent {
                         data: hello_counter,
                         padding: 0,
@@ -138,40 +147,107 @@ fn main() {
                     };
 
                     for plugin in plugins.iter_plugins() {
-                        if let (Some(data_ptr), Some(update_fn)) =
-                            (plugin.data_ptr, plugin.event_update_fn())
-                        {
-                            // Marshal the event data into the
-                            // plugin's linear memory.
+                        // Reset the plugin's bump allocator so it can accept
+                        // new event data.
+                        if let Some(reset_fn) = &plugin.event_reset_fn {
+                            match reset_fn.call() {
+                                Ok(0) => { /* success */ }
+                                Ok(error_id) => {
+                                    error!(logger, "reset allocator error: {}", error_id);
+                                }
+                                Err(err) => {
+                                    print_runtime_error(&logger, &err);
+                                }
+                            }
+                        }
+
+                        if let Some(alloc_fn) = &plugin.event_alloc2_fn {
                             if let Ok(memory) = plugin.memory() {
-                                if let Some(cell_slice) = unsafe {
-                                    data_ptr.deref_mut(
-                                        memory,
-                                        0,
-                                        std::mem::size_of::<gers_events::HelloEvent>() as u32,
-                                    )
-                                } {
-                                    let data_slice: &mut [u8] =
-                                        unsafe { std::mem::transmute(cell_slice) };
-                                    let (_, struct_slice, _) = unsafe {
-                                        data_slice.align_to_mut::<gers_events::HelloEvent>()
-                                    };
+                                let data_size = std::mem::size_of::<gers_events::HelloEvent>() as u32;
 
-                                    if !struct_slice.is_empty() {
-                                        // Copy into memory.
-                                        struct_slice[0] = event_data.clone();
-
-                                        // NOTE: HelloEvent type = 1
-                                        if let Err(err) = update_fn.call(1, data_ptr) {
-                                            error::print_runtime_error(&logger, &err);
+                                match alloc_fn.call(data_size as u32) {
+                                    Ok(wasm_ptr) => {
+                                        // TODO: What happens if alloc return null?
+                                        if wasm_ptr.is_null() {
+                                            warn!(logger, "wasm_ptr is null");
+                                            continue;
                                         }
+
+                                        // SAFETY: No aliasing checks means multiple mutable
+                                        //         references can be taken to the same memory.
+                                        //         We do this in the event loop which is single
+                                        //         threaded, and do not hang on to this pointer.
+                                        let maybe_slice = unsafe { wasm_ptr.deref_mut(memory, 0, data_size) };
+
+                                        match maybe_slice {
+                                            Some(slice) => {
+                                                // SAFETY: The Rust compiler itself transmutes
+                                                //         from [Cell<u8>]. While not guaranteed
+                                                //         to work it's common for projects to
+                                                //         rely on this trick.
+                                                let (_, data_slice, _) =
+                                                    unsafe { slice.align_to_mut::<gers_events::HelloEvent>() };
+
+                                                // If the slice size mismatches the event data, the
+                                                // middle will be length 0.
+                                                if !data_slice.is_empty() {
+                                                    data_slice[0] = event_data.clone();
+
+                                                    if let Some(update_fn) = &plugin.event_update_fn() {
+                                                        // NOTE: HelloEvent type = 1
+                                                        if let Err(err) = update_fn.call(1, wasm_ptr) {
+                                                            error::print_runtime_error(&logger, &err);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            None => {
+                                                error!(logger, "WasmPtr deref fail ptr={}", wasm_ptr.offset());
+                                            }
+                                        }
+                                    }
+                                    Err(err) => {
+                                        print_runtime_error(&logger, &err);
                                     }
                                 }
                             }
                         }
+
+                        // if let (Some(data_ptr), Some(update_fn)) =
+                        //     (plugin.data_ptr, plugin.event_update_fn())
+                        // {
+                        //     // Marshal the event data into the
+                        //     // plugin's linear memory.
+                        //     if let Ok(memory) = plugin.memory() {
+                        //         if let Some(cell_slice) = unsafe {
+                        //             data_ptr.deref_mut(
+                        //                 memory,
+                        //                 0,
+                        //                 std::mem::size_of::<gers_events::HelloEvent>() as u32,
+                        //             )
+                        //         } {
+                        //             let data_slice: &mut [u8] =
+                        //                 unsafe { std::mem::transmute(cell_slice) };
+                        //             let (_, struct_slice, _) = unsafe {
+                        //                 data_slice.align_to_mut::<gers_events::HelloEvent>()
+                        //             };
+
+                        //             if !struct_slice.is_empty() {
+                        //                 // Copy into memory.
+                        //                 struct_slice[0] = event_data.clone();
+
+                        //                 // NOTE: HelloEvent type = 1
+                        //                 if let Err(err) = update_fn.call(1, data_ptr) {
+                        //                     error::print_runtime_error(&logger, &err);
+                        //                 }
+                        //             }
+                        //         }
+                        //     }
+                        // }
                     }
 
                     hello_counter += 1;
+                    lockstep_timer -= LOCKSTEP_INTEVAL;
                 }
             }
             E::RedrawRequested(window_id) if window_id == window.id() => {

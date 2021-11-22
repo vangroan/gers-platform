@@ -21,5 +21,5 @@ pub fn print_runtime_error(logger: &Logger, err: &RuntimeError) {
         message.push_str(frame_message.as_str());
     }
 
-    error!(logger, "update error: {}", message);
+    error!(logger, "runtime error: {}", message);
 }

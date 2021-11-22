@@ -46,6 +46,9 @@ macro_rules! get_func {
     };
 }
 
+pub type EventInitFn = NativeFunc<(), i32>;
+pub type EventResetfn = NativeFunc<(), i32>;
+pub type EventAlloc2Fn = NativeFunc<u32, WasmPtr<u8, Array>>;
 pub type EventAllocFn = NativeFunc<u32, WasmPtr<u8, Array>>;
 pub type EventUpdateFn = NativeFunc<(i32, WasmPtr<u8, Array>), i32>;
 
@@ -65,8 +68,11 @@ pub struct Plugin {
     pub data_ptr: Option<WasmPtr<u8, Array>>,
     meta: PluginMeta,
     update_fn: Option<wasmer::Function>,
-    event_alloc_fn: Option<EventAllocFn>,
-    event_update_fn: Option<EventUpdateFn>,
+    pub event_init_fn: Option<EventInitFn>,
+    pub event_reset_fn: Option<EventResetfn>,
+    pub event_alloc2_fn: Option<EventAllocFn>,
+    pub event_alloc_fn: Option<EventAllocFn>,
+    pub event_update_fn: Option<EventUpdateFn>,
 }
 
 impl Default for Plugins {
@@ -135,20 +141,20 @@ impl Plugins {
         //     Err(wasmer::ExportError::IncompatibleType) => return Err(PluginError::FunctionType),
         // };
         let update_fn = get_func!(instance.exports, "__gers_update");
-        let event_alloc_fn =
-            get_func!(instance.exports, "__gers_event_alloc", u32, WasmPtr<u8, Array>);
-        let event_update_fn = get_func!(
-            instance.exports,
-            "__gers_event_update",
-            (i32, WasmPtr<u8, Array>),
-            i32
-        );
+        let event_init_fn = get_func!(instance.exports, "__gers_bump_init", (), i32);
+        let event_reset_fn = get_func!(instance.exports, "__gers_bump_reset", (), i32);
+        let event_alloc2_fn = get_func!(instance.exports, "__gers_bump_alloc", u32, WasmPtr<u8, Array>);
+        let event_alloc_fn = get_func!(instance.exports, "__gers_event_alloc", u32, WasmPtr<u8, Array>);
+        let event_update_fn = get_func!(instance.exports, "__gers_event_update", (i32, WasmPtr<u8, Array>), i32);
 
         self.plugins.push(Plugin {
             instance,
             data_ptr: None,
             meta: plugin_meta,
             update_fn,
+            event_init_fn,
+            event_reset_fn,
+            event_alloc2_fn,
             event_alloc_fn,
             event_update_fn,
         });

@@ -1,6 +1,7 @@
 [workspace]
 
 members = [
+    "gers_api",
     "gers_app",
     "gers_core",
     "gers_events",

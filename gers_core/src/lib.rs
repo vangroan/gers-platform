@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use gers_api::gers_error_t;
 use gers_events::*;
 
@@ -10,14 +11,14 @@ extern "C" {
 
 #[no_mangle]
 pub extern "C" fn __gers_update() {
-    unsafe {
-        let message = "Hello, Mod!";
-        log_info(message.as_bytes().as_ptr(), message.len() as u32);
+    // unsafe {
+    //     // let message = "Hello, Mod!";
+    //     // log_info(message.as_bytes().as_ptr(), message.len() as u32);
 
-        let delta_time = get_delta_time();
-        let message = &format!("delta_time: {}", delta_time);
-        log_info(message.as_bytes().as_ptr(), message.len() as u32);
-    }
+    //     // let delta_time = get_delta_time();
+    //     // let message = &format!("delta_time: {}", delta_time);
+    //     // log_info(message.as_bytes().as_ptr(), message.len() as u32);
+    // }
 }
 
 /// Safe shim for printing a log message.
@@ -84,29 +85,42 @@ pub extern "C" fn __gers_event_update(event_type: i32, data_ptr: *const u8) -> g
             }
 
             unsafe {
-                // FIXME: Length and range checks on data buffer.
-
-                // Convert raw data pointer to
-                let offset = data_ptr.offset_from(EVENT_DATA.as_ptr());
-
-                // When negative the pointer is before buffer.
-                if offset < 0 {
-                    log("data pointer is before memory buffer");
-                    return gers_error_t::GenericError;
+                match gers_api::CmdReader::new() {
+                    Some(cmd_reader) => match cmd_reader.read(data_ptr) {
+                        Some(data) => {
+                            hello_handler(data);
+                            gers_error_t::Success
+                        }
+                        None => gers_error_t::GenericError,
+                    },
+                    None => gers_error_t::GenericError,
                 }
-                let index = offset as usize;
-                let payload_size = std::mem::size_of::<HelloEvent>();
-
-                let (_, data, _) = EVENT_DATA[index..payload_size].align_to::<HelloEvent>();
-                if data.is_empty() {
-                    log("data could not be transmuted");
-                    return gers_error_t::GenericError;
-                }
-
-                hello_handler(&data[0]);
             }
 
-            gers_error_t::Success
+            // unsafe {
+            //     // FIXME: Length and range checks on data buffer.
+
+            //     // Convert raw data pointer to
+            //     let offset = data_ptr.offset_from(EVENT_DATA.as_ptr());
+
+            //     // When negative the pointer is before buffer.
+            //     if offset < 0 {
+            //         log("data pointer is before memory buffer");
+            //         return gers_error_t::GenericError;
+            //     }
+            //     let index = offset as usize;
+            //     let payload_size = std::mem::size_of::<HelloEvent>();
+
+            //     let (_, data, _) = EVENT_DATA[index..payload_size].align_to::<HelloEvent>();
+            //     if data.is_empty() {
+            //         log("data could not be transmuted");
+            //         return gers_error_t::GenericError;
+            //     }
+
+            //     hello_handler(&data[0]);
+            // }
+
+            // gers_error_t::Success
         }
     }
 }

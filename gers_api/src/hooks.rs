@@ -14,7 +14,7 @@ use crate::{
 ///
 /// When the WebAssembly threading proposal is implemented by
 /// wasmer, this will need to be wrapped in `Mutex` or `RwLock`.
-static mut EVENT_DATA: BumpAllocator = unsafe { BumpAllocator::uninit() };
+pub(crate) static mut EVENT_DATA: BumpAllocator = unsafe { BumpAllocator::uninit() };
 
 /// Initialize the bump allocator for commands.
 #[no_mangle]
@@ -39,5 +39,14 @@ unsafe extern "C" fn __gers_bump_reset() -> gers_error_t {
         Ok(_) => gers_error_t::Success,
         Err(E::Uninitialized) => gers_error_t::AllocUninitialized,
         Err(_) => gers_error_t::GenericError,
+    }
+}
+
+#[no_mangle]
+#[allow(unreachable_patterns)]
+unsafe extern "C" fn __gers_bump_alloc(size: usize) -> *mut u8 {
+    match EVENT_DATA.alloc_aligned(size) {
+        Ok(ptr) => ptr.as_ptr_mut(),
+        Err(_) => std::ptr::null_mut(),
     }
 }

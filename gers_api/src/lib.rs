@@ -1,5 +1,8 @@
 pub mod bump;
+mod cmd;
 pub mod hooks;
+
+pub use cmd::CmdReader;
 
 #[allow(non_camel_case_types)]
 #[repr(u8)]

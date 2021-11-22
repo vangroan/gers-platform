@@ -153,8 +153,15 @@ pub struct BumpAllocator {
     /// Points to the end of the previously allocated object.
     /// Not guaranteed to be aligned.
     cursor: usize,
+    /// Block owning the raw memory allcoation.
+    ///
+    /// Will contain a dangling pointer if the allcoator
+    /// is uninitialized. This saves us from checking an
+    /// Option<T> on each allocation.
     block: RawBlock,
-    initialzed: bool,
+    /// Allows the allocator to be created using a constant
+    /// expression in a static variable.
+    initialized: bool,
 }
 
 impl BumpAllocator {
@@ -166,7 +173,7 @@ impl BumpAllocator {
         Ok(Self {
             cursor: 0,
             block,
-            initialzed: true,
+            initialized: true,
         })
     }
 
@@ -181,19 +188,31 @@ impl BumpAllocator {
         Self {
             cursor: 0,
             block: RawBlock::dangling(),
-            initialzed: false,
+            initialized: false,
         }
     }
 
     /// Create a new bump allocator with `BLOCK_SIZE`.
     pub fn initialize(&mut self) -> Result<(), BumpError> {
-        let block = RawBlock::new(BLOCK_SIZE)?;
+        // We shouldn't initialze the allcoator twice because
+        // a valid allocated block would be forgotten and not
+        // properly dopped.
+        if self.initialized {
+            return Ok(());
+        }
 
-        *self = Self {
-            cursor: 0,
-            block,
-            initialzed: true,
-        };
+        // Replace the dangling block with a proper allocation.
+        let mut block = RawBlock::new(BLOCK_SIZE)?;
+        std::mem::swap(&mut block, &mut self.block);
+
+        // When the bump allocator is uninitialized, the raw
+        // block is dangling and not pointing to valid memory.
+        //
+        // Dropping it would trigger a free of the dangling pointer.
+        std::mem::forget(block);
+
+        self.cursor = 0;
+        self.initialized = true;
 
         Ok(())
     }
@@ -220,7 +239,7 @@ impl BumpAllocator {
     ///
     /// The memory pointed to by the resulting pointer is uninitialized.
     pub unsafe fn alloc(&mut self, size: usize, align: usize) -> Result<RawPtr, BumpError> {
-        if !self.initialzed {
+        if !self.initialized {
             return Err(BumpError::Uninitialized);
         }
 
@@ -256,7 +275,7 @@ impl BumpAllocator {
     /// The caller must ensure that all retained pointers must be dropped
     /// before resetting the allocator.
     pub unsafe fn reset(&mut self) -> Result<(), BumpError> {
-        if !self.initialzed {
+        if !self.initialized {
             return Err(BumpError::Uninitialized);
         }
 

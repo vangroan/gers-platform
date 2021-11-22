@@ -25,6 +25,19 @@ unsafe extern "C" fn __gers_bump_init() -> gers_error_t {
         Ok(_) => gers_error_t::Success,
         Err(E::BadRequest) => gers_error_t::BadAlloc,
         Err(E::OutOfMemory) => gers_error_t::OutOfMemory,
+        Err(E::Uninitialized) => gers_error_t::AllocUninitialized,
+        Err(_) => gers_error_t::GenericError,
+    }
+}
+
+/// Reset the bump allocator.
+#[no_mangle]
+unsafe extern "C" fn __gers_bump_reset() -> gers_error_t {
+    use BumpError as E;
+
+    match EVENT_DATA.reset() {
+        Ok(_) => gers_error_t::Success,
+        Err(E::Uninitialized) => gers_error_t::AllocUninitialized,
         Err(_) => gers_error_t::GenericError,
     }
 }

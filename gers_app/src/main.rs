@@ -71,6 +71,18 @@ fn main() {
 
     // Allocate space in the plugins for the event buffer.
     for plugin in plugins.iter_plugins_mut() {
+        if let Some(init_fn) = &plugin.event_init_fn {
+            match init_fn.call() {
+                Ok(0) => { /* Success */ }
+                Ok(error_id) => {
+                    error!(logger, "allocation init failed: {}", error_id);
+                }
+                Err(err) => {
+                    print_runtime_error(&logger, &err);
+                }
+            }
+        }
+
         if let Some(alloc_fn) = plugin.event_alloc_fn() {
             // Allocate 4KB
             match alloc_fn.call(0x1000) {
@@ -138,6 +150,22 @@ fn main() {
                     };
 
                     for plugin in plugins.iter_plugins() {
+                        // Reset the plugin's bump allocator so it can accept
+                        // new event data.
+                        if let Some(reset_fn) = &plugin.event_reset_fn {
+                            match reset_fn.call() {
+                                Ok(0) => { /* success */ }
+                                Ok(error_id) => {
+                                    error!(logger, "reset allocator error: {}", error_id);
+                                }
+                                Err(err) => {
+                                    print_runtime_error(&logger, &err);
+                                }
+                            }
+                        }
+
+                        // if let Some(alloc_fn) = plugin.event_alloc_fn
+
                         if let (Some(data_ptr), Some(update_fn)) =
                             (plugin.data_ptr, plugin.event_update_fn())
                         {

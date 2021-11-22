@@ -12,4 +12,6 @@ pub enum gers_error_t {
     OutOfMemory = 11,
     /// Allocator has run out of memory space.
     NoSpace = 12,
+    /// Allocation or reset was called, but the allocator has not been initialized.
+    AllocUninitialized = 13,
 }

@@ -134,7 +134,7 @@ impl Drop for RawBlock {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum BumpError {
     /// Request for allocation has invalid arguments.
     BadRequest,
@@ -229,7 +229,7 @@ impl BumpAllocator {
         // Cursor is offset from start of block and not memory address.
         let next = (aligned + size) - self.block.ptr.as_ptr() as usize;
 
-        if next > self.block.size {
+        if next >= self.block.size {
             return Err(BumpError::NoSpace);
         }
 
@@ -327,5 +327,18 @@ mod test {
         assert_eq!(align_word(12), word_double);
         assert_eq!(align_word(16), word_double);
         assert_eq!(align_word(32), word_double);
+    }
+
+    #[test]
+    fn test_no_space() {
+        let mut bump = BumpAllocator::new().unwrap();
+
+        unsafe {
+            match bump.alloc(BLOCK_SIZE, BLOCK_SIZE) {
+                Ok(_) => panic!("allocation unexpectedly succeeded"),
+                Err(BumpError::NoSpace) => { /* success */ }
+                Err(err) => panic!("unexpected error: {:?}", err),
+            }
+        }
     }
 }

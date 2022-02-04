@@ -7,6 +7,9 @@ Experimental game engine / framework that's scriptable using [WebAssembly](https
 
 ## Build
 
+TODO: WebAssembly Toolkit
+TODO: Install wasm32-unknown-unknown
+
 This project requires [`cargo-make`](https://github.com/sagiegurari/cargo-make) to build, because it mixes native targets with WASM targets. The build process requires some more involved tasks that can't be covered with `cargo build` alone.
 
 ```shell
